@@ -1,0 +1,16 @@
+# Editors
+.idea/
+.vscode/
+
+# pixi environments
+.pixi
+*.egg-info
+
+.env
+*.html
+
+**/__pycache__
+
+# lib
+lib/
+mcpb-package/

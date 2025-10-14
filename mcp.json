@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+        "text-retrieval": {
+            "command": "pixi",
+            "args": ["run", "mcps"],
+            "env": {
+                "TRANSPORT": "stdio",
+                "HOST": "0.0.0.0",
+                "PORT": "10000",
+                "MCP_SERVER_REQUEST_TIMEOUT": "1500000",
+                "MCP_REQUEST_TIMEOUT_RESET_ON_PROGRESS": "true",
+                "MCP_REQUEST_MAX_TOTAL_TIMEOUT": "1500000"
+            }
+        }
+    }
+}

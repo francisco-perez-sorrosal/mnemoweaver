@@ -1,0 +1,43 @@
+{
+  "manifest_version": "0.1",
+  "name": "mnemoweaver",
+  "display_name": "Mnemoweaver MCP Server",
+  "version": "0.0.1",
+  "description": "MCP server that provides indexing and retrieval functionality for a text-based knowledge base",
+  "long_description": "A comprehensive MCP server that enables indexing and retrieval functionality for a text-based knowledge base.",
+  "author": {
+    "name": "Francisco Perez Sorrosal",
+    "email": "fperezsorrosal@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/francisco-perez-sorrosal/mnemoweaver",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/francisco-perez-sorrosal/mnemoweaver.git"
+  },
+  "keywords": ["mnemoweaver", "mcp", "knowledge base", "indexing", "retrieval"],
+  "server": {
+    "type": "python",
+    "entry_point": "src/mnemoweaver/main.py",
+    "mcp_config": {
+      "command": "python3",
+      "args": [
+        "${__dirname}/src/mnemoweaver/main.py"
+      ],
+      "env": {
+        "PYTHONPATH": "${__dirname}/lib:${__dirname}/src:${__dirname}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "add_memory",
+      "description": "Index a memory into a knowledge base"
+    }
+  ],
+  "prompts": [
+  ],
+  "compatibility": {
+    "python": ">=3.13"
+  }
+}

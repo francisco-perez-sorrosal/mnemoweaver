@@ -1,0 +1,82 @@
+[project]
+name = "mnemoweaver"
+version = "0.0.1"
+description = "MCP server using Anthropic library to expose a text indexing and retrieval system as a resource."
+license = {text = "MIT"}
+authors = [
+    {name = "Francisco Perez Sorrosal", email = "fperezsorrosal@gmail.com"}
+]
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License", # Or your preferred license
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "mcp[cli]>=1.17.0,<2", 
+    "loguru>=0.7.3,<0.8", 
+]
+
+[project.urls]
+"Homepage" = "https://github.com/francisco-perez-sorrosal/mnemoweaver"
+"Bug Tracker" = "https://github.com/francisco-perez-sorrosal/mnemoweaver/issues"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+mnemoweaver = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+mcps="python src/mnemoweaver/main.py"
+# MCP Bundle
+update-mcpb-deps="rm -rf uv.lock && pixi run uv sync && pixi run uv lock && pixi run uv export --no-hashes --format requirements-txt > requirements.txt"
+mcp-bundle="rm -rf lib/ && mkdir -p lib && pixi run python -m pip install -r requirements.txt --target lib --upgrade --force-reinstall"
+pack = "npx @anthropic-ai/mcpb pack . mcpb-package/mnemoweaver.mcpb"
+test = "python src/mnemoweaver/main.py --debug"
+
+[tool.pixi.dependencies]
+pip = ">=25.2,<26"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mnemoweaver"]
+
+[project.scripts]
+mnemoweaver = "mnemoweaver.main:app"
+
+[tool.setuptools]
+packages = ["mnemoweaver"]
+package-dir = {"" = "src"}
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.13"
+warnings_as_errors = false
+strict = true
+# For FastAPI and Pydantic, if needed:
+# plugins = "pydantic.mypy"
+
+[[tool.mypy.overrides]]
+module = [
+    "aiofiles",
+    "multipart"
+]
+ignore_missing_imports = true

@@ -1,0 +1,7 @@
+"mnemoweaver": {
+  "command": "npx",
+  "args": [
+    "mcp-remote",
+    "https://mnemoweaver.wasmer.app/mcp"
+  ]
+}
