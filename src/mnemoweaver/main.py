@@ -11,6 +11,7 @@ from mcp.types import TextContent
 
 from mnemoweaver.bm25 import BM25Index
 from mnemoweaver.chunking import chunk_by_section
+from mnemoweaver.hippocampus import Hippocampus
 from mnemoweaver.storage import InMemoryBasicDocumentStorage
 
 # Configure logger for MCPB environment
@@ -49,9 +50,11 @@ except Exception as e:
 storage = InMemoryBasicDocumentStorage()
 bm25_index = BM25Index(storage)
 
+hippocampus = Hippocampus(bm25_index, reranker_fn=None)
+
 
 @mcp.tool()
-async def add_memory(
+async def memorize(
     memory: str, context: Context) -> list[base.Message]:
     """
     Adds a memory to the storage.
@@ -63,11 +66,21 @@ async def add_memory(
     Returns:
         list[base.Message]: Instructions for memory addition process
     """
-    await context.log('info', message=f"Adding memory to the storage: {memory}")
+    await context.log('info', message=f"Adding memory to the knowledge base...")
     chunks = chunk_by_section(memory)
     memories = [{"content": chunk} for chunk in chunks]
-    await bm25_index.add_documents(memories, context)
-    return [base.AssistantMessage(content="Memory added to the storage")]
+    await bm25_index.add_memories(memories)
+    return [base.AssistantMessage(content="Memory added to the knowledge base")]
+
+@mcp.tool()
+async def retrieve(
+    query: str, context: Context) -> list[base.Message]:
+    """
+    Retrieves memories from the storage.
+    """
+    retrieved_memories = await hippocampus.retrieve(query, k=3, k_rrf=60, ctx=context)
+    string_memories = "\n".join([f"[{retrieved_memory.memory.id}: Score={retrieved_memory.score}] {retrieved_memory.memory.content}" for retrieved_memory in retrieved_memories])
+    return [base.AssistantMessage(content=string_memories)]
 
 
 if __name__ == "__main__":

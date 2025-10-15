@@ -3,13 +3,17 @@ import math
 from collections import Counter
 from typing import Callable, Any, List, Dict, Tuple, Optional
 
-from mcp.server.fastmcp import Context
+from loguru import logger
 
+from mnemoweaver.models import Memory, RetrievedMemory
 from mnemoweaver.storage import InMemoryBasicDocumentStorage
+from mnemoweaver.protocols import MemoryIndex
 
 
-class BM25Index:
+class BM25Index(MemoryIndex):
     """BM25 ranking algorithm implementation with separate document storage."""
+
+    name: str = "bm25"
     
     def __init__(
         self,
@@ -25,31 +29,8 @@ class BM25Index:
         self._avg_doc_len: float = 0.0
         self._idf: Dict[str, float] = {}
         self._index_built: bool = False
-
-    async def add_document(self, document: Dict[str, Any], rebuild_index: bool, context: Context) -> None:
-        """Add a document to storage and update index stats.
+        self._tokenizer = tokenizer if tokenizer else self._storage._tokenizer
         
-        Args:
-            document: Dictionary containing at least a 'content' key
-        """
-        self._storage.add_document(document)
-        await context.log('info', message=f"Document added to the storage: {document}")
-        if rebuild_index:
-            await context.log('info', message=f"Rebuilding index...")
-            self._rebuild_index()
-
-    async def add_documents(self, documents: List[Dict[str, Any]], context: Context) -> None:
-        """Add multiple documents to storage and update index.
-        
-        Args:
-            documents: List of document dictionaries
-        """
-        for document in documents:
-            await self.add_document(document, rebuild_index=False, context=context)
-            
-        await context.log('info', message=f"Index rebuilt after adding documents to the storage")
-        self._rebuild_index()
-
     def _rebuild_index(self) -> None:
         """Rebuild the index statistics from current storage."""
         self._doc_freqs = {}
@@ -74,38 +55,34 @@ class BM25Index:
 
         # Calculate document frequencies
         self._doc_freqs = {}
-        for i in range(len(self._storage)):
-            doc_tokens = self._storage.get_document_tokens(i)
+        for id, document in self._storage.documents.items():
             seen_tokens = set()
-            for token in doc_tokens:
+            for token in document.tokens:
                 if token not in seen_tokens:
                     self._doc_freqs[token] = self._doc_freqs.get(token, 0) + 1
                     seen_tokens.add(token)
 
         # Calculate average document length
-        total_length = sum(self._storage.get_document_length(i) for i in range(len(self._storage)))
-        self._avg_doc_len = total_length / len(self._storage)
+        self._avg_doc_len = self._storage.get_total_length() / len(self._storage)
 
         # Calculate IDF scores
         self._calculate_idf()
         self._index_built = True
 
-    def _compute_bm25_score(
-        self, query_tokens: List[str], doc_index: int
-    ) -> float:
+    def _compute_bm25_score(self, query_tokens: List[str], doc_id: str) -> float:
         """Compute BM25 score for a query against a specific document.
         
         Args:
             query_tokens: Tokenized query terms
-            doc_index: Index of document in storage
+            doc_id: ID of document in storage
             
         Returns:
             BM25 score for the document
         """
         score = 0.0
-        doc_tokens = self._storage.get_document_tokens(doc_index)
+        doc_tokens = self._storage.get_document_tokens(doc_id)
         doc_term_counts = Counter(doc_tokens)
-        doc_length = self._storage.get_document_length(doc_index)
+        doc_length = self._storage.get_document(doc_id).length
 
         for token in query_tokens:
             if token not in self._idf:
@@ -122,33 +99,55 @@ class BM25Index:
 
         return score
 
-    def search(
+    # MemoryIndex protocol implementation
+
+    async def add_memory(self, memory: Dict[str, Any], rebuild_index: bool) -> None:
+        """Add a document to storage and update index stats.
+        
+        Args:
+            memory: Dictionary containing at least a 'content' key
+        """
+        self._storage.add_document(memory)
+        logger.info(f"Memory added to the storage: {memory}")
+        if rebuild_index:
+            logger.info(f"Rebuilding index...")
+            self._rebuild_index()
+
+    async def add_memories(self, memories: List[Dict[str, Any]]) -> None:
+        """Add multiple documents to storage and update index.
+        
+        Args:
+            memories: List of memory dictionaries with 'content' key
+        """
+        for memory in memories:
+            await self.add_memory(memory, rebuild_index=False)
+            
+        self._rebuild_index()
+        logger.info(f"Index rebuilt after adding memories to the storage")
+
+    def retrieve(
         self,
-        query: Any,
+        query: str,
         k: int = 1,
         score_normalization_factor: float = 0.1,
-    ) -> List[Tuple[Dict[str, Any], float]]:
+    ) -> List[RetrievedMemory]:
         """Search for documents using BM25 ranking.
-        
+
         Args:
             query: Query string to search for
             k: Number of top results to return
             score_normalization_factor: Factor for score normalization
-            
+
         Returns:
-            List of (document, score) tuples sorted by relevance
-            
+            List of RetrievedMemory objects sorted by relevance (highest score first)
+
         Raises:
-            TypeError: If query is not a string
             ValueError: If k is not positive
         """
         if not self._storage:
             return []
 
-        if isinstance(query, str):
-            query_text = query
-        else:
-            raise TypeError("Query must be a string for BM25Index.")
+        query_text = query
 
         if k <= 0:
             raise ValueError("k must be a positive integer.")
@@ -160,25 +159,31 @@ class BM25Index:
             return []
 
         # Get tokenizer from storage
-        query_tokens = self._storage._tokenizer(query_text)
+        query_tokens = self._tokenizer(query_text)
         if not query_tokens:
             return []
 
-        raw_scores = []
-        for i in range(len(self._storage)):
-            raw_score = self._compute_bm25_score(query_tokens, i)
+        # Compute BM25 scores for all memories and sort them
+        scored_memories = []
+        for id in self._storage.get_document_ids():
+            raw_score = self._compute_bm25_score(query_tokens, id)
             if raw_score > 1e-9:
-                doc = self._storage.get_document(i)
-                raw_scores.append((raw_score, doc))
+                memory = self._storage.get_document(id).memory
+                scored_memories.append(RetrievedMemory(memory=memory, score=raw_score))
 
-        raw_scores.sort(key=lambda item: item[0], reverse=True)
+        # Sort by score descending (highest scores first)
+        scored_memories.sort(key=lambda item: item.score, reverse=True)
 
+        # Take top k and normalize scores if needed
+        top_k_memories = scored_memories[:k]
+
+        # Apply score normalization and return as RetrievedMemory objects
         normalized_results = []
-        for raw_score, doc in raw_scores[:k]:
-            normalized_score = math.exp(-score_normalization_factor * raw_score)
-            normalized_results.append((doc, normalized_score))
-
-        normalized_results.sort(key=lambda item: item[1])
+        for retrieved_memory in top_k_memories:
+            normalized_score = math.exp(-score_normalization_factor * retrieved_memory.score)
+            normalized_results.append(
+                RetrievedMemory(memory=retrieved_memory.memory, score=normalized_score)
+            )
 
         return normalized_results
 

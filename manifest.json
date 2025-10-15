@@ -31,8 +31,12 @@
   },
   "tools": [
     {
-      "name": "add_memory",
+      "name": "memorize",
       "description": "Index a memory into a knowledge base"
+    },
+    {
+      "name": "retrieve",
+      "description": "Retrieve memories from a knowledge base"
     }
   ],
   "prompts": [
