@@ -17,19 +17,20 @@ class BM25Index(MemoryIndex):
     
     def __init__(
         self,
-        storage: Optional[InMemoryBasicDocumentStorage] = None,
+        storage: InMemoryBasicDocumentStorage,
         k1: float = 1.5,
         b: float = 0.75,
         tokenizer: Optional[Callable[[str], List[str]]] = None,
     ):
         self.k1 = k1
         self.b = b
-        self._storage = storage if storage else InMemoryBasicDocumentStorage(tokenizer)
+        self._storage = storage
         self._doc_freqs: Dict[str, int] = {}
         self._avg_doc_len: float = 0.0
         self._idf: Dict[str, float] = {}
         self._index_built: bool = False
         self._tokenizer = tokenizer if tokenizer else self._storage._tokenizer
+
         
     def _rebuild_index(self) -> None:
         """Rebuild the index statistics from current storage."""
@@ -152,6 +153,8 @@ class BM25Index(MemoryIndex):
         if k <= 0:
             raise ValueError("k must be a positive integer.")
 
+        logger.info(f"Retrieving {k} memories for query: {query}")
+        
         if not self._index_built:
             self._build_index()
 
@@ -193,5 +196,5 @@ class BM25Index(MemoryIndex):
 
     def __repr__(self) -> str:
         """String representation of the BM25 index."""
-        return f"BM25Index(count={len(self)}, k1={self.k1}, b={self.b}, index_built={self._index_built})"
+        return f"BM25Index(count={len(self)} (Storage id: {id(self._storage)}), k1={self.k1}, b={self.b}, index_built={self._index_built})"
     

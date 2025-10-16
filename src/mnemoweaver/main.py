@@ -1,5 +1,6 @@
 """Main module for the Text Retrieval MCP server with MCPB compatibility."""
 
+import argparse
 import os
 import sys
 import traceback
@@ -12,21 +13,47 @@ from mcp.types import TextContent
 from mnemoweaver.bm25 import BM25Index
 from mnemoweaver.chunking import chunk_by_section
 from mnemoweaver.hippocampus import Hippocampus
+from mnemoweaver.mem_compressor import SentenceTransformerMemCompressor
 from mnemoweaver.storage import InMemoryBasicDocumentStorage
+from mnemoweaver.vector_index import DistanceMetric, VectorIndex
 
 # Configure logger for MCPB environment
 logger.remove()
 logger.add(
-    sys.stderr, 
+    sys.stdout, 
     level="INFO",
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
     colorize=True
 )   
     
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Mnemoweaver MCP Server")
+    parser.add_argument(
+        "--transport", 
+        choices=["stdio", "streamable-http"], 
+        help="Transport method (overrides TRANSPORT environment variable)"
+    )
+    parser.add_argument(
+        "--host", 
+        default="0.0.0.0", 
+        help="Host to bind to (overrides HOST environment variable)"
+    )
+    parser.add_argument(
+        "--port", 
+        type=int, 
+        help="Port to bind to (overrides PORT environment variable)"
+    )
+    return parser.parse_args()
+
+# Parse CLI arguments
+args = parse_args()
+
 # Configure transport and statelessness
-trspt = "stdio"
+trspt = args.transport or os.environ.get("TRANSPORT", "stdio")
 stateless_http = False
-match os.environ.get("TRANSPORT", trspt):
+
+match trspt:
     case "sse":
         raise ValueError("SSE transport is deprecated. Using stdio (locally) or streamable-http (remote) instead.")
     case "streamable-http":
@@ -39,18 +66,19 @@ match os.environ.get("TRANSPORT", trspt):
 
 # Initialize FastMCP server with error handling
 try:
-    host = os.environ.get("HOST", "0.0.0.0")  
-    port = int(os.environ.get("PORT", 10000))  
+    host = args.host or os.environ.get("HOST", "0.0.0.0")  
+    port = args.port or int(os.environ.get("PORT", 10000))  
     mcp = FastMCP("linkedin_mcp_fps", stateless_http=stateless_http, host=host, port=port)
     logger.info(f"FastMCP server initialized with transport: {trspt}, host: {host}, port: {port}")
 except Exception as e:
     logger.error(f"Failed to initialize FastMCP server: {e}")
     raise
 
-storage = InMemoryBasicDocumentStorage()
-bm25_index = BM25Index(storage)
+doc_storage = InMemoryBasicDocumentStorage()
+bm25_index = BM25Index(doc_storage)
+vector_index = VectorIndex(doc_storage, distance_metric=DistanceMetric.COSINE)
 
-hippocampus = Hippocampus(bm25_index, reranker_fn=None)
+hippocampus = Hippocampus(bm25_index, vector_index, reranker_fn=None)
 
 
 @mcp.tool()
@@ -70,6 +98,7 @@ async def memorize(
     chunks = chunk_by_section(memory)
     memories = [{"content": chunk} for chunk in chunks]
     await bm25_index.add_memories(memories)
+    await vector_index.add_memories(memories)
     return [base.AssistantMessage(content="Memory added to the knowledge base")]
 
 @mcp.tool()
@@ -96,7 +125,7 @@ if __name__ == "__main__":
         
         # Additional pre-flight checks
         if trspt == "stdio":
-            logger.info("Using stdio transport - suitable for local Claude Desktop integration")
+            logger.info("Using stdio transport - suitable for local integration")
         elif trspt == "streamable-http":
             logger.info(f"Using HTTP transport - server will be accessible at http://{host}:{port}/mcp")
         

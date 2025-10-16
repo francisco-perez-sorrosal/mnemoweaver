@@ -76,6 +76,7 @@ class Hippocampus:
         
         self._memory_indexes: Dict[str, MemoryIndex] = {index.name: index for index in memory_indexes}
         self._reranker_fn = reranker_fn
+        logger.info(f"Hippocampus initialized with indexes:\n{'\n'.join([str(index) for index in self._memory_indexes.values()])}")
         
     def _validate_retrieve_input(self, query: str, k: int, k_rrf: int):
         if k <= 0:
@@ -120,7 +121,8 @@ class Hippocampus:
         """
         self._validate_retrieve_input(query, k, k_rrf)
 
-        all_memories = {memory_index.name: memory_index.retrieve(query, k=k * 5) for memory_index in self._memory_indexes.values()}
+        all_memories = {memory_index.name: memory_index.retrieve(query, k=k) for memory_index in self._memory_indexes.values()}
+        logger.info(f"All memories: {"\n".join([str(memory) for memory in all_memories.values()])}")
         await ctx.log('info', message=f"Retrieved memories from {len(all_memories)} indexes. Proceeding to rank and score...") if ctx else None
         logger.info(f"Retrieved memories from {len(all_memories)} indexes")
 
@@ -128,6 +130,7 @@ class Hippocampus:
         index_count = 0
         for index_name, index_memories in all_memories.items():            
             await ctx.log('info', message=f"Ranking memory {index_name} of {len(all_memories)} indexes") if ctx else None
+            logger.info(f"Ranking {len(index_memories)} memories for index: {index_name}")
             for rank, retrieved_memory in enumerate(index_memories):
                 memory_id = retrieved_memory.memory.id
                 if memory_id not in memory_ranks:
@@ -137,12 +140,14 @@ class Hippocampus:
                     }
                 memory_ranks[memory_id]["ranks"][index_count] = rank + 1
             index_count += 1
+        logger.info(f"Memory ranks: {"\n".join([f"{id}: {memory_rank}" for id, memory_rank in memory_ranks.items()])}")
         logger.info(f"Calculated ranks for {len(memory_ranks)} memories")
 
         scored_memories: List[RetrievedMemory] = [
             RetrievedMemory(memory=memory_data["memory_obj"].memory, score=calc_rrf_score(k_rrf, memory_data["ranks"])) 
             for memory_data in memory_ranks.values()
         ]
+        
 
         logger.info(f"Calculated RRF scores for {len(scored_memories)} memories")
 
@@ -153,7 +158,8 @@ class Hippocampus:
         logger.info(f"Filtered out {len(scored_memories) - len(filtered_memories)} memories with a score of 0")
         filtered_memories.sort(key=lambda x: x.score, reverse=True)
         
-
+        logger.info(f"Filtered memories: {"\n".join([str(filtered_memory) for filtered_memory in filtered_memories])}")
+        
         selected_memories = filtered_memories[:k]
 
         # Rerank the memories only if a reranker function is provided!!! Otherwise, return the selected memories

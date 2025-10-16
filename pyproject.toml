@@ -17,7 +17,8 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]>=1.17.0,<2", 
-    "loguru>=0.7.3,<0.8", 
+    "loguru>=0.7.3,<0.8",
+    "sentence-transformers>=5.1.1,<6", 
 ]
 
 [project.urls]
